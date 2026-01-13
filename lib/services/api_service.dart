@@ -33,6 +33,12 @@ class ApiService {
           headers: headers,
           body: body != null ? jsonEncode(body) : null,
         );
+      } else if (method == 'DELETE') {
+        response = await http.delete(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        );
       } else {
         throw Exception('Unsupported HTTP method: $method');
       }
@@ -60,13 +66,26 @@ class ApiService {
 
   // 獲取最近20筆司機對話列表
   static Future<List<Map<String, dynamic>>> getRecentDriverConversations() async {
+    print('📡 [API] 調用 getRecentDriverConversations: /api/customer-service/drivers/recent-conversations/');
+    
     final response = await _request(
       'GET',
       '/api/customer-service/drivers/recent-conversations/',
     );
 
+    print('📥 [API] recent-conversations 完整響應: $response');
+
     if (response['status'] == 'success') {
-      return List<Map<String, dynamic>>.from(response['drivers'] ?? []);
+      final drivers = List<Map<String, dynamic>>.from(response['drivers'] ?? []);
+      print('✅ [API] recent-conversations 解析成功，共 ${drivers.length} 個對話');
+      
+      // 打印每個對話的詳細信息
+      for (var i = 0; i < drivers.length; i++) {
+        final driver = drivers[i];
+        print('  👤 [$i] 司機: ${driver['driver_name']} (ID: ${driver['driver_id']}), unread_count: ${driver['unread_count']}');
+      }
+      
+      return drivers;
     } else {
       throw ApiException(
         message: response['message'] ?? '獲取對話列表失敗',
@@ -94,11 +113,15 @@ class ApiService {
       queryParams['conversation_id'] = conversationId.toString();
     }
 
+    print('📡 [API] 調用 getDriverSystemMessages: driverId=$driverId, viewType=$viewType');
+
     final response = await _request(
       'GET',
       '/api/customer-service/driver-system-messages/',
       queryParams: queryParams,
     );
+
+    print('📥 [API] driver-system-messages 響應: driverId=$driverId, unread_count=${response['unread_count']}');
 
     if (response['status'] == 'success') {
       return response;
@@ -111,6 +134,7 @@ class ApiService {
   }
 
   // 創建司機系統訊息
+  // 我們是系統客服，所以 is_from_system 應該設為 true
   static Future<Map<String, dynamic>> createDriverSystemMessage({
     required int driverId,
     required String content,
@@ -119,7 +143,7 @@ class ApiService {
     final body = <String, dynamic>{
       'driver_id': driverId,
       'content': content,
-      'is_from_system': false,
+      'is_from_system': true, // 系統客服發送
     };
 
     if (conversationId != null) {
@@ -234,6 +258,69 @@ class ApiService {
     } else {
       throw ApiException(
         message: response['message'] ?? '獲取儲值記錄失敗',
+        statusCode: 0,
+      );
+    }
+  }
+
+  // 註冊 FCM 設備
+  static Future<Map<String, dynamic>> registerFCMDevice({
+    required String registrationId,
+    required String deviceId,
+    required String type,
+    int? userId,
+  }) async {
+    final body = <String, dynamic>{
+      'registration_id': registrationId,
+      'device_id': deviceId,
+      'type': type,
+    };
+
+    if (userId != null) {
+      body['user_id'] = userId;
+    }
+
+    print('📡 [API] 註冊 FCM 設備: deviceId=$deviceId, type=$type');
+
+    final response = await _request(
+      'POST',
+      '/api/customer-service/fcm/register/',
+      body: body,
+    );
+
+    if (response['status'] == 'success') {
+      print('✅ [API] FCM 設備註冊成功: ${response['message']}');
+      return response;
+    } else {
+      throw ApiException(
+        message: response['message'] ?? 'FCM 設備註冊失敗',
+        statusCode: 0,
+      );
+    }
+  }
+
+  // 停用 FCM 設備
+  static Future<Map<String, dynamic>> unregisterFCMDevice({
+    required String deviceId,
+  }) async {
+    final body = <String, dynamic>{
+      'device_id': deviceId,
+    };
+
+    print('📡 [API] 停用 FCM 設備: deviceId=$deviceId');
+
+    final response = await _request(
+      'DELETE',
+      '/api/customer-service/fcm/unregister/',
+      body: body,
+    );
+
+    if (response['status'] == 'success') {
+      print('✅ [API] FCM 設備已停用: ${response['message']}');
+      return response;
+    } else {
+      throw ApiException(
+        message: response['message'] ?? 'FCM 設備停用失敗',
         statusCode: 0,
       );
     }

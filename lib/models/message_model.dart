@@ -65,6 +65,7 @@ class ConversationModel {
   final String? latestMessageContent;
   final bool? latestMessageIsFromSystem;
   final DateTime? latestMessageCreatedAt;
+  int unreadCount; // 未讀消息數，後續會通過 API 更新
 
   ConversationModel({
     required this.driverId,
@@ -75,9 +76,15 @@ class ConversationModel {
     this.latestMessageContent,
     this.latestMessageIsFromSystem,
     this.latestMessageCreatedAt,
+    this.unreadCount = 0,
   });
 
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
+    print('📦 [Model] ConversationModel.fromJson:');
+    print('  - driver_id: ${json['driver_id']}');
+    print('  - driver_name: ${json['driver_name']}');
+    print('  - unread_count (從 recent-conversations): ${json['unread_count']}');
+    
     return ConversationModel(
       driverId: json['driver_id'] as int,
       driverName: json['driver_name'] as String,
@@ -90,6 +97,7 @@ class ConversationModel {
           ? DateTime.parse(json['latest_message_created_at'] as String)
               .add(const Duration(hours: 8))
           : null,
+      unreadCount: json['unread_count'] as int? ?? 0,
     );
   }
 }

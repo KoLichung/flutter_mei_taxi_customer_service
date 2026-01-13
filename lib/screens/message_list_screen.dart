@@ -14,6 +14,7 @@ class _MessageListScreenState extends State<MessageListScreen> {
   List<ConversationModel> _conversations = [];
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isPolling = false; // 輪詢標誌
 
   @override
   void initState() {
@@ -24,6 +25,7 @@ class _MessageListScreenState extends State<MessageListScreen> {
 
   @override
   void dispose() {
+    _stopPolling();
     super.dispose();
   }
 
@@ -34,14 +36,29 @@ class _MessageListScreenState extends State<MessageListScreen> {
     });
 
     try {
+      print('🔄 [MessageList] 開始載入對話列表 (使用 recent-conversations API)...');
+      
+      // 1. 獲取對話列表
       final drivers = await ApiService.getRecentDriverConversations();
+      print('✅ [MessageList] recent-conversations API 返回 ${drivers.length} 個對話');
+      
+      // 2. 解析對話列表（直接使用 recent-conversations 返回的 unread_count）
+      final conversations = drivers
+          .map((json) => ConversationModel.fromJson(json))
+          .toList();
+      
+      print('✅ [MessageList] 載入完成，共 ${conversations.length} 個對話');
+      for (var i = 0; i < conversations.length; i++) {
+        final conv = conversations[i];
+        print('  💬 [$i] ${conv.driverName}: unreadCount = ${conv.unreadCount}');
+      }
+      
       setState(() {
-        _conversations = drivers
-            .map((json) => ConversationModel.fromJson(json))
-            .toList();
+        _conversations = conversations;
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ [MessageList] 載入失敗: $e');
       setState(() {
         _errorMessage = e.toString();
         _isLoading = false;
@@ -50,12 +67,29 @@ class _MessageListScreenState extends State<MessageListScreen> {
   }
 
   void _startPolling() {
+    if (!_isPolling) {
+      _isPolling = true;
+      print('🔄 [MessageList] 開始輪詢');
+    }
+    _poll();
+  }
+
+  void _poll() {
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
+      if (mounted && _isPolling) {
         _loadConversations();
-        _startPolling();
+        _poll();
+      } else {
+        print('⏸️ [MessageList] 輪詢已暫停');
       }
     });
+  }
+
+  void _stopPolling() {
+    if (_isPolling) {
+      _isPolling = false;
+      print('⏸️ [MessageList] 停止輪詢');
+    }
   }
 
   @override
@@ -98,18 +132,53 @@ class _MessageListScreenState extends State<MessageListScreen> {
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue,
-                child: Text(
-                  conversation.driverName.isNotEmpty
-                      ? conversation.driverName[0]
-                      : '?',
-                  style: const TextStyle(color: Colors.white),
-                ),
+              leading: Stack(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.blue,
+                    child: Text(
+                      conversation.driverName.isNotEmpty
+                          ? conversation.driverName[0]
+                          : '?',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  if (conversation.unreadCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          conversation.unreadCount > 99
+                              ? '99+'
+                              : conversation.unreadCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               title: Text(
                 conversation.driverName,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontWeight: conversation.unreadCount > 0
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
               ),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,20 +191,42 @@ class _MessageListScreenState extends State<MessageListScreen> {
                       conversation.latestMessageContent!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: conversation.unreadCount > 0
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: conversation.unreadCount > 0
+                            ? Colors.black87
+                            : Colors.grey[600],
+                      ),
                     ),
                   ],
                 ],
               ),
-              trailing: conversation.latestMessageCreatedAt != null
-                  ? Text(
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (conversation.latestMessageCreatedAt != null)
+                    Text(
                       _formatTime(conversation.latestMessageCreatedAt!),
                       style: TextStyle(
-                        color: Colors.grey[600],
+                        color: conversation.unreadCount > 0
+                            ? Colors.blue
+                            : Colors.grey[600],
                         fontSize: 12,
+                        fontWeight: conversation.unreadCount > 0
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
-                    )
-                  : null,
+                    ),
+                ],
+              ),
               onTap: () {
+                // 暫停輪詢
+                _stopPolling();
+                print('⏸️ [MessageList] 進入詳情頁，暫停輪詢');
+                
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -146,7 +237,12 @@ class _MessageListScreenState extends State<MessageListScreen> {
                       initialBalance: conversation.driverLeftMoney,
                     ),
                   ),
-                );
+                ).then((_) {
+                  // 返回時恢復輪詢
+                  print('▶️ [MessageList] 返回列表頁，恢復輪詢');
+                  _loadConversations(); // 立即載入一次最新數據
+                  _startPolling();
+                });
               },
             ),
           );

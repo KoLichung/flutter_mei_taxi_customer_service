@@ -153,13 +153,14 @@ class _MessageDetailScreenState extends State<MessageDetailScreen> {
     _messageController.clear();
 
     // 創建臨時訊息（時間已經是本地時間，不需要再加 8 小時）
+    // 我們是系統客服，所以 isFromSystem 設為 true
     final tempMessage = MessageModel(
       id: DateTime.now().millisecondsSinceEpoch, // 臨時 ID
       driver: widget.driverId,
       driverName: widget.driverName,
       driverPhone: widget.driverPhone,
       content: content,
-      isFromSystem: false,
+      isFromSystem: true, // 系統客服發送
       createdAt: DateTime.now(), // 本地時間
     );
 
@@ -341,12 +342,17 @@ class _MessageDetailScreenState extends State<MessageDetailScreen> {
                             final message = displayMessages[index];
                             final isTemp = _tempMessages.contains(message);
 
+                            // isFromSystem: true = 系統客服發送（我們），false = 司機發送（對方）
+                            // 我們是系統客服，所以 isFromSystem: true 顯示在右側
+                            final isFromSystemService = message.isFromSystem;
+                            final isFromDriver = !message.isFromSystem;
+                            
                             return Opacity(
                               opacity: isTemp ? 0.6 : 1.0,
                               child: Align(
-                                alignment: message.isFromSystem
-                                    ? Alignment.centerLeft
-                                    : Alignment.centerRight,
+                                alignment: isFromSystemService
+                                    ? Alignment.centerRight // 系統客服訊息在右側（我們）
+                                    : Alignment.centerLeft, // 司機訊息在左側（對方）
                                 child: Container(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   padding: const EdgeInsets.symmetric(
@@ -354,9 +360,9 @@ class _MessageDetailScreenState extends State<MessageDetailScreen> {
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: message.isFromSystem
-                                        ? Colors.grey[200]
-                                        : Colors.blue[100],
+                                    color: isFromSystemService
+                                        ? Colors.blue[100]  // 系統客服訊息：藍色（我們）
+                                        : Colors.grey[200], // 司機訊息：灰色（對方）
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   constraints: BoxConstraints(
